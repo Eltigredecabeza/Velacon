@@ -323,6 +323,48 @@ textarea{resize:none;line-height:1.5}
   <div style="font-size:13px;font-weight:600;color:var(--co)" id="load-txt">Analizando...</div>
 </div>
 <script>
+// COOKIE HELPERS (more persistent than localStorage on iOS)
+function setCookie(name,val,days){
+  var d=new Date();d.setTime(d.getTime()+(days*24*60*60*1000));
+  document.cookie=name+'='+encodeURIComponent(val)+';expires='+d.toUTCString()+';path=/;SameSite=Lax';
+}
+function getCookie(name){
+  var n=name+'=',ca=document.cookie.split(';');
+  for(var i=0;i<ca.length;i++){var c=ca[i].trim();if(c.indexOf(n)===0)return decodeURIComponent(c.substring(n.length));}
+  return null;
+}
+function store(key,val){
+  try{localStorage.setItem(key,JSON.stringify(val));}catch(e){}
+  try{setCookie(key,JSON.stringify(val),365);}catch(e){}
+}
+function retrieve(key){
+  try{var v=localStorage.getItem(key);if(v)return JSON.parse(v);}catch(e){}
+  try{var c=getCookie(key);if(c)return JSON.parse(c);}catch(e){}
+  return null;
+}
+function storeStr(key,val){
+  try{localStorage.setItem(key,val);}catch(e){}
+  try{setCookie(key,val,365);}catch(e){}
+}
+function retrieveStr(key){
+  try{var v=localStorage.getItem(key);if(v)return v;}catch(e){}
+  try{return getCookie(key);}catch(e){}
+  return null;
+}
+function removeStore(key){
+  try{localStorage.removeItem(key);}catch(e){}
+  try{document.cookie=key+'=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';}catch(e){}
+}
+
+// STORAGE HELPERS (cookies + localStorage for iOS persistence)
+function setCookie(n,v,d){var e=new Date();e.setTime(e.getTime()+(d||365)*864e5);document.cookie=n+'='+encodeURIComponent(v)+';expires='+e.toUTCString()+';path=/;SameSite=Lax';}
+function getCookie(n){var c=document.cookie.split(';');for(var i=0;i<c.length;i++){var p=c[i].trim();if(p.indexOf(n+'=')===0)return decodeURIComponent(p.slice(n.length+1));}return null;}
+function store(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}try{setCookie(k,JSON.stringify(v));}catch(e){}}
+function retrieve(k){try{var v=localStorage.getItem(k);if(v!==null)return JSON.parse(v);}catch(e){}try{var c=getCookie(k);if(c)return JSON.parse(c);}catch(e){}return null;}
+function storeStr(k,v){try{localStorage.setItem(k,v);}catch(e){}try{setCookie(k,v);}catch(e){}}
+function retrieveStr(k){try{var v=localStorage.getItem(k);if(v)return v;}catch(e){}try{return getCookie(k);}catch(e){}return null;}
+function removeStore(k){try{localStorage.removeItem(k);}catch(e){}try{document.cookie=k+'=;expires=Thu,01 Jan 1970 00:00:00 UTC;path=/';}catch(e){}}
+
 // STATE
 var API_KEY='',currentUser=null,profile=null,foodLog={},checkins=[],chatHistory=[],userPrefs={};
 var pendingItems=[],origItems=[],previewUrl=null,ciFeeling='',cfgGoal='',cfgAct='';
@@ -336,16 +378,16 @@ var ML={calories:'Calorias',protein:'Proteina',carbs:'Carbos',fats:'Grasas',fibe
 
 // STORAGE
 function sk(u){return{profile:'vc_p_'+u,foodLog:'vc_f_'+u,checkins:'vc_c_'+u,prefs:'vc_pr_'+u};}
-function getUsers(){try{return JSON.parse(localStorage.getItem('vc_users')||'[]');}catch(e){return[];}}
-function setUsers(u){localStorage.setItem('vc_users',JSON.stringify(u));}
+function getUsers(){try{return (retrieve('vc_users')||[]);}catch(e){return[];}}
+function setUsers(u){store('vc_users',u);}
 function loadUD(uid){
-  try{return{profile:JSON.parse(localStorage.getItem(sk(uid).profile)||'null'),
-    foodLog:JSON.parse(localStorage.getItem(sk(uid).foodLog)||'{}'),
-    checkins:JSON.parse(localStorage.getItem(sk(uid).checkins)||'[]'),
-    prefs:JSON.parse(localStorage.getItem(sk(uid).prefs)||'{}')};
+  try{return{profile:(retrieve(sk(uid).profile)||null),
+    foodLog:(retrieve(sk(uid).foodLog)||{}),
+    checkins:(retrieve(sk(uid).checkins)||[]),
+    prefs:(retrieve(sk(uid).prefs)||{})};
   }catch(e){return{profile:null,foodLog:{},checkins:[],prefs:{}};}
 }
-function saveUD(uid,key,val){localStorage.setItem(sk(uid)[key],JSON.stringify(val));}
+function saveUD(uid,key,val){store(sk(uid)[key],val);}
 function dKey(y,m,d){return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
 function initials(n){return n.trim().split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);}
 function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -604,7 +646,7 @@ function confirmFood(){
   foodLog[key]=foodLog[key].concat(pendingItems);
   saveUD(currentUser.uid,'foodLog',foodLog);
   // Extra persist to ensure data survives
-  try{localStorage.setItem('vc_f_'+currentUser.uid,JSON.stringify(foodLog));}catch(e){}
+  
   closeConfirm();renderDay();
   var newT=prev+added,g=profile.macros;
   var msg=pendingItems.length+' alimento(s) registrados. ';
@@ -899,23 +941,23 @@ function delUser(e,uid){
   e.stopPropagation();
   if(!confirm('Eliminar este usuario y todos sus datos?'))return;
   setUsers(getUsers().filter(function(u){return u.uid!==uid;}));
-  ['profile','foodLog','checkins','prefs'].forEach(function(k){localStorage.removeItem(sk(uid)[k]);});
+  ['profile','foodLog','checkins','prefs'].forEach(function(k){removeStore(sk(uid)[k]);});
   renderUsers();
 }
 function selUser(uid){
   var users=getUsers();currentUser=null;
   for(var i=0;i<users.length;i++){if(users[i].uid===uid){currentUser=users[i];break;}}
   if(!currentUser)return;
-  localStorage.setItem('vc_lastuser',uid);
+  storeStr('vc_lastuser',uid);
   var ud=loadUD(uid);
   profile=ud.profile;foodLog=ud.foodLog||{};checkins=ud.checkins||[];userPrefs=ud.prefs||{};
   if(!profile){startOB();return;}
   launchApp();
 }
-function switchUser(){if(confirm('Cambiar de usuario?')){localStorage.removeItem('vc_lastuser');currentUser=null;profile=null;foodLog={};checkins=[];chatHistory=[];userPrefs={};showScr('s-users');renderUsers();}}
+function switchUser(){if(confirm('Cambiar de usuario?')){removeStore('vc_lastuser');currentUser=null;profile=null;foodLog={};checkins=[];chatHistory=[];userPrefs={};showScr('s-users');renderUsers();}}
 function changeApiKey(){
-  localStorage.removeItem('vc_apikey');
-  localStorage.removeItem('vc_lastuser');
+  removeStore('vc_apikey');
+  removeStore('vc_lastuser');
   API_KEY='';
   currentUser=null;profile=null;foodLog={};checkins=[];chatHistory=[];userPrefs={};
   document.getElementById('key-input').value='';
@@ -1043,18 +1085,18 @@ function saveKey(){
   if(!k.startsWith('sk-ant')&&!k.startsWith('sk-or')){
     alert('Clave invalida. Anthropic empieza con sk-ant, OpenRouter con sk-or');return;
   }
-  API_KEY=k;localStorage.setItem('vc_apikey',k);showScr('s-users');renderUsers();
+  API_KEY=k;storeStr('vc_apikey',k);showScr('s-users');renderUsers();
   // Auto-select last user if exists
-  var lu=localStorage.getItem('vc_lastuser');
+  var lu=retrieveStr('vc_lastuser');
   if(lu){var users=getUsers();if(users.find(function(u){return u.uid===lu;}))selUser(lu);}
 }
 
 // INIT
 (function(){
-  var saved=localStorage.getItem('vc_apikey');
+  var saved=retrieveStr('vc_apikey');
   if(saved){
     API_KEY=saved;
-    var lastUser=localStorage.getItem('vc_lastuser');
+    var lastUser=retrieveStr('vc_lastuser');
     if(lastUser){
       var users=getUsers();
       var found=users.find(function(u){return u.uid===lastUser;});
